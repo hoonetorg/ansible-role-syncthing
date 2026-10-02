@@ -1,0 +1,76 @@
+---
+# input: syncthing_folder {id, label?, path, type?, devices? (device names), devices_exclusive?, state?}
+- name: "Folder {{ syncthing_folder.id }}: check device names"
+  ansible.builtin.assert:
+    that: syncthing_folder.devices | default([]) | difference(syncthing_device_ids.keys() | list) | length == 0
+    fail_msg: >-
+      folder {{ syncthing_folder.id }}: unknown device name(s)
+      {{ syncthing_folder.devices | default([]) | difference(syncthing_device_ids.keys() | list) }}
+      (devices are referenced by their name in syncthing.devices)
+    quiet: true
+
+- name: "Folder {{ syncthing_folder.id }}: compare"
+  ansible.builtin.set_fact:
+    syncthing_folder_current: >-
+      {{ syncthing_folders_current | selectattr('id', 'equalto', syncthing_folder.id) | first | default({}) }}
+    syncthing_folder_desired:
+      id: "{{ syncthing_folder.id }}"
+      label: "{{ syncthing_folder.label | default(syncthing_folder.id) }}"
+      path: "{{ syncthing_folder.path }}"
+      type: "{{ syncthing_folder.type | default('sendreceive') }}"
+    syncthing_folder_device_ids: >-
+      {{ syncthing_folder.devices | default([]) | map('extract', syncthing_device_ids) | list }}
+
+# the local device is added by syncthing itself; missing fields get syncthing's defaults
+- name: "Folder {{ syncthing_folder.id }}: add"
+  ansible.builtin.uri:
+    url: "{{ syncthing_api_url }}/rest/config/folders"
+    method: POST
+    headers: { X-API-Key: "{{ syncthing_api_key }}" }
+    body_format: json
+    body: >-
+      {{ syncthing_folder_desired
+         | combine({'devices': syncthing_folder_device_ids | map('community.general.dict_kv', 'deviceID') | list}) }}
+    validate_certs: false
+  when:
+    - syncthing_folder.state | default('present') == 'present'
+    - syncthing_folder_current | length == 0
+  changed_when: true
+
+# devices_exclusive false: listed devices are only added (devices shared manually or by an introducer stay)
+# devices_exclusive true: devices not listed are removed (the own device always stays);
+# kept entries are reused unchanged, so per-device folder settings survive
+- name: "Folder {{ syncthing_folder.id }}: update"
+  ansible.builtin.uri:
+    url: "{{ syncthing_api_url }}/rest/config/folders/{{ syncthing_folder.id }}"
+    method: PATCH
+    headers: { X-API-Key: "{{ syncthing_api_key }}" }
+    body_format: json
+    body: >-
+      {{ syncthing_folder_desired
+         | combine({'devices': kept + (missing | map('community.general.dict_kv', 'deviceID') | list)}) }}
+    validate_certs: false
+  vars:
+    exclusive: "{{ syncthing_folder.devices_exclusive | default(syncthing_final.folder_devices_exclusive) | bool }}"
+    current_ids: "{{ syncthing_folder_current.devices | default([]) | map(attribute='deviceID') | list }}"
+    missing: "{{ syncthing_folder_device_ids | difference(current_ids) }}"
+    extra: "{{ current_ids | difference(syncthing_folder_device_ids + [syncthing_my_id]) if exclusive else [] }}"
+    kept: "{{ syncthing_folder_current.devices | default([]) | rejectattr('deviceID', 'in', extra) | list }}"
+  when:
+    - syncthing_folder.state | default('present') == 'present'
+    - syncthing_folder_current | length > 0
+    - >-
+      missing | length > 0 or extra | length > 0 or syncthing_folder_desired !=
+      (syncthing_folder_current | dict2items | selectattr('key', 'in', syncthing_folder_desired) | items2dict)
+  changed_when: true
+
+- name: "Folder {{ syncthing_folder.id }}: remove"
+  ansible.builtin.uri:
+    url: "{{ syncthing_api_url }}/rest/config/folders/{{ syncthing_folder.id }}"
+    method: DELETE
+    headers: { X-API-Key: "{{ syncthing_api_key }}" }
+    validate_certs: false
+  when:
+    - syncthing_folder.state | default('present') == 'absent'
+    - syncthing_folder_current | length > 0
+  changed_when: true

@@ -1,0 +1,143 @@
+---
+- name: Build final syncthing configuration
+  ansible.builtin.set_fact:
+    syncthing_final: "{{ syncthing_defaults | combine(syncthing | default({}), recursive=True) }}"
+  no_log: true
+
+- name: Assert required syncthing settings
+  ansible.builtin.assert:
+    that:
+      - syncthing_final.user | length > 0
+      - syncthing_final.cert | length > 0
+      - syncthing_final.key | length > 0
+      - syncthing_final.apikey | length > 0
+      - syncthing_final.gui.password | length > 0
+    fail_msg: "syncthing: user, cert, key, apikey and gui.password must be set"
+    quiet: true
+  no_log: true
+
+- name: Look up syncthing user
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ syncthing_final.user }}"
+
+- name: Set syncthing paths
+  ansible.builtin.set_fact:
+    syncthing_user_home: "{{ getent_passwd[syncthing_final.user][4] }}"
+    syncthing_user_gid: "{{ getent_passwd[syncthing_final.user][2] }}"
+    syncthing_home: >-
+      {{ syncthing_final.home if syncthing_final.home | length > 0
+         else getent_passwd[syncthing_final.user][4] ~ '/.local/state/syncthing' }}
+    syncthing_service: "syncthing@{{ syncthing_final.user }}.service"
+
+- name: Install syncthing
+  ansible.builtin.package:
+    name: "{{ syncthing_final.package }}"
+    state: present
+
+- name: Gather package facts
+  ansible.builtin.package_facts:
+
+- name: Assert syncthing version
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.packages[syncthing_final.package][0].version is version(syncthing_final.min_version, '>=')
+    fail_msg: >-
+      syncthing {{ ansible_facts.packages[syncthing_final.package][0].version }} is installed, but
+      >= {{ syncthing_final.min_version }} is required (on openSUSE add the OBS "network" repository)
+    quiet: true
+  when: not ansible_check_mode or syncthing_final.package in ansible_facts.packages
+
+# parents of the default home must belong to the user, not to root
+- name: Create syncthing home directory
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ syncthing_final.user }}"
+    group: "{{ syncthing_user_gid }}"
+  loop: >-
+    {{ ([syncthing_user_home ~ '/.local', syncthing_user_home ~ '/.local/state']
+        if syncthing_home == syncthing_user_home ~ '/.local/state/syncthing' else []) + [syncthing_home] }}
+
+- name: Restrict syncthing home directory
+  ansible.builtin.file:
+    path: "{{ syncthing_home }}"
+    mode: "0700"
+
+- name: Install syncthing identity
+  ansible.builtin.copy:
+    content: "{{ item.content | trim }}\n"
+    dest: "{{ syncthing_home }}/{{ item.name }}"
+    owner: "{{ syncthing_final.user }}"
+    group: "{{ syncthing_user_gid }}"
+    mode: "0600"
+  loop:
+    - { name: cert.pem, content: "{{ syncthing_final.cert }}" }
+    - { name: key.pem, content: "{{ syncthing_final.key }}" }
+  loop_control:
+    label: "{{ item.name }}"
+  no_log: true
+  notify: syncthing restart
+
+# keeps the installed cert/key, creates config.xml with GUI user and (hashed) password
+- name: Generate syncthing configuration
+  ansible.builtin.command:
+    argv:
+      - runuser
+      - -u
+      - "{{ syncthing_final.user }}"
+      - --
+      - syncthing
+      - generate
+      - "--home={{ syncthing_home }}"
+      - "--gui-user={{ syncthing_final.gui.user or syncthing_final.user }}"
+      - --gui-password=-
+      - --no-port-probing      # otherwise a random GUI port is chosen if 8384 is in use
+    stdin: "{{ syncthing_final.gui.password }}"
+    stdin_add_newline: false
+    creates: "{{ syncthing_home }}/config.xml"
+  no_log: true
+
+- name: Create syncthing service drop-in directory
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ syncthing_service }}.d"
+    state: directory
+    mode: "0755"
+
+- name: Write syncthing service drop-in
+  ansible.builtin.template:
+    src: override.conf.j2
+    dest: "/etc/systemd/system/{{ syncthing_service }}.d/ansible.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - syncthing daemon-reload
+    - syncthing restart
+
+- name: Flush handlers (daemon-reload, restart)
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start syncthing
+  ansible.builtin.systemd_service:
+    name: "{{ syncthing_service }}"
+    enabled: true
+    state: started
+
+- name: Configure syncthing via REST API
+  ansible.builtin.include_tasks: api.yml
+  when: not ansible_check_mode
+
+- name: Gather service facts
+  ansible.builtin.service_facts:
+  when: syncthing_final.firewalld
+
+- name: Open firewalld service syncthing
+  ansible.posix.firewalld:
+    service: syncthing
+    permanent: true
+    immediate: true
+    state: enabled
+  when:
+    - syncthing_final.firewalld
+    - ansible_facts.services['firewalld.service'].state | default('') == 'running'

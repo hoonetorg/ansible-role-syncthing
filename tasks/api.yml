@@ -1,0 +1,160 @@
+---
+# current API key, TLS and address are read from config.xml (syncthing rewrites it after every change),
+# so the role also works after the API key or GUI settings were changed
+- name: Read syncthing config.xml
+  ansible.builtin.slurp:
+    src: "{{ syncthing_home }}/config.xml"
+  register: syncthing_config_raw
+  no_log: true
+
+# regex_findall returns the group, no backslashes needed (they are mangled between YAML and Jinja)
+- name: Derive API endpoint from config.xml
+  ansible.builtin.set_fact:
+    syncthing_api_key: "{{ cfg | regex_findall('<apikey>([^<]*)</apikey>') | first }}"
+    syncthing_api_url: >-
+      {{ 'https' if (cfg | regex_findall('<gui [^>]*tls=.(true|false).') | first) == 'true' else 'http' }}://{{
+         cfg | regex_findall('<gui [^>]*>[^<]*<address>([^<]*)</address>') | first }}
+  vars:
+    cfg: "{{ syncthing_config_raw.content | b64decode }}"
+  no_log: true
+
+- name: Wait for the syncthing API
+  ansible.builtin.uri:
+    url: "{{ syncthing_api_url }}/rest/noauth/health"
+    validate_certs: false
+  register: syncthing_health
+  until: syncthing_health.status == 200
+  retries: 30
+  delay: 2
+
+- name: Get GUI configuration
+  ansible.builtin.uri:
+    url: "{{ syncthing_api_url }}/rest/config/gui"
+    headers: { X-API-Key: "{{ syncthing_api_key }}" }
+    validate_certs: false
+  register: syncthing_gui_current
+  no_log: true
+
+- name: Set desired GUI configuration
+  ansible.builtin.set_fact:
+    syncthing_gui_desired:
+      address: "{{ syncthing_final.gui.address }}"
+      useTLS: "{{ syncthing_final.gui.tls | bool }}"
+      user: "{{ syncthing_final.gui.user or syncthing_final.user }}"
+      apiKey: "{{ syncthing_final.apikey }}"
+  no_log: true
+
+# changing address/TLS restarts the GUI listener, the API key is switched immediately
+- name: Update GUI configuration
+  ansible.builtin.uri:
+    url: "{{ syncthing_api_url }}/rest/config/gui"
+    method: PATCH
+    headers: { X-API-Key: "{{ syncthing_api_key }}" }
+    body_format: json
+    body: "{{ syncthing_gui_desired }}"
+    validate_certs: false
+  when: >-
+    syncthing_gui_desired !=
+    (syncthing_gui_current.json | dict2items | selectattr('key', 'in', syncthing_gui_desired) | items2dict)
+  register: syncthing_gui_update
+  changed_when: true
+  no_log: true
+
+- name: Switch to the new API endpoint
+  ansible.builtin.set_fact:
+    syncthing_api_key: "{{ syncthing_gui_desired.apiKey }}"
+    syncthing_api_url: "{{ 'https' if syncthing_gui_desired.useTLS else 'http' }}://{{ syncthing_gui_desired.address }}"
+  when: syncthing_gui_update is changed
+  no_log: true
+
+- name: Wait for the syncthing API after GUI change
+  ansible.builtin.uri:
+    url: "{{ syncthing_api_url }}/rest/noauth/health"
+    validate_certs: false
+  register: syncthing_health
+  until: syncthing_health.status == 200
+  retries: 30
+  delay: 2
+  when: syncthing_gui_update is changed
+
+# the stored password is a bcrypt hash: check it via the GUI login endpoint (204 ok, 403 wrong)
+- name: Check GUI password
+  ansible.builtin.uri:
+    url: "{{ syncthing_api_url }}/rest/noauth/auth/password"
+    method: POST
+    body_format: json
+    body:
+      username: "{{ syncthing_gui_desired.user }}"
+      password: "{{ syncthing_final.gui.password }}"
+      stayLoggedIn: false
+    status_code: [204, 403]
+    validate_certs: false
+  register: syncthing_login
+  no_log: true
+
+- name: Set GUI password
+  ansible.builtin.uri:
+    url: "{{ syncthing_api_url }}/rest/config/gui"
+    method: PATCH
+    headers: { X-API-Key: "{{ syncthing_api_key }}" }
+    body_format: json
+    body: { password: "{{ syncthing_final.gui.password }}" }
+    validate_certs: false
+  when: syncthing_login.status != 204
+  changed_when: true
+  no_log: true
+
+- name: Get configured devices and folders
+  ansible.builtin.uri:
+    url: "{{ syncthing_api_url }}/rest/config/{{ item }}"
+    headers: { X-API-Key: "{{ syncthing_api_key }}" }
+    validate_certs: false
+  loop: [devices, folders]
+  register: syncthing_current
+  no_log: true
+
+- name: Set current devices/folders and device name map
+  ansible.builtin.set_fact:
+    syncthing_devices_current: "{{ syncthing_current.results[0].json }}"
+    syncthing_folders_current: "{{ syncthing_current.results[1].json }}"
+    syncthing_device_ids: "{{ syncthing_final.devices | items2dict(key_name='name', value_name='id') }}"
+
+- name: Get own device ID
+  ansible.builtin.uri:
+    url: "{{ syncthing_api_url }}/rest/system/status"
+    headers: { X-API-Key: "{{ syncthing_api_key }}" }
+    validate_certs: false
+  register: syncthing_status
+  no_log: true
+
+- name: Set own device ID
+  ansible.builtin.set_fact:
+    syncthing_my_id: "{{ syncthing_status.json.myID }}"
+
+# syncthing generate uses the hostname at that time (e.g. a DHCP FQDN)
+- name: Set own device name
+  ansible.builtin.uri:
+    url: "{{ syncthing_api_url }}/rest/config/devices/{{ syncthing_my_id }}"
+    method: PATCH
+    headers: { X-API-Key: "{{ syncthing_api_key }}" }
+    body_format: json
+    body: { name: "{{ syncthing_final.name }}" }
+    validate_certs: false
+  when: >-
+    (syncthing_devices_current | selectattr('deviceID', 'equalto', syncthing_my_id) | map(attribute='name') | first
+     | default('')) != syncthing_final.name
+  changed_when: true
+
+- name: Configure devices
+  ansible.builtin.include_tasks: device.yml
+  loop: "{{ syncthing_final.devices }}"
+  loop_control:
+    loop_var: syncthing_device
+    label: "{{ syncthing_device.name }}"
+
+- name: Configure folders
+  ansible.builtin.include_tasks: folder.yml
+  loop: "{{ syncthing_final.folders }}"
+  loop_control:
+    loop_var: syncthing_folder
+    label: "{{ syncthing_folder.id }}"

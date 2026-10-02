@@ -1,0 +1,36 @@
+---
+# Merged (recursively) with the inventory variable `syncthing` into `syncthing_final`.
+syncthing_defaults:
+  package: syncthing
+  min_version: "2.0"
+
+  # system user running syncthing@<user>.service (required)
+  user: ""
+  # config/data dir; empty: <home of user>/.local/state/syncthing
+  home: ""
+
+  # name of this device (shown in the own GUI, suggested to other devices when they add it)
+  name: "{{ inventory_hostname_short }}"
+
+  # identity (PEM, required): the certificate defines the device ID
+  cert: ""
+  key: ""
+  # API key used by this role (required)
+  apikey: ""
+
+  gui:
+    address: "127.0.0.1:8384"
+    tls: true
+    user: ""          # empty: same as `user`
+    password: ""      # plain text (required); syncthing stores the bcrypt hash
+
+  # open the firewalld service "syncthing" (22000/tcp+udp, 21027/udp) when firewalld is running
+  firewalld: true
+
+  # managed devices/folders, see README.md; objects not listed here are left untouched
+  devices: []
+  folders: []
+
+  # default for folders[].devices_exclusive: true = a folder is shared with exactly the listed devices
+  # (others are removed); false = listed devices are only added
+  folder_devices_exclusive: false

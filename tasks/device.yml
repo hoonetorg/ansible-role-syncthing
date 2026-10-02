@@ -1,0 +1,52 @@
+---
+# input: syncthing_device {id, name, introducer?, auto_accept_folders?, state?}
+- name: "Device {{ syncthing_device.name }}: compare"
+  ansible.builtin.set_fact:
+    syncthing_device_current: >-
+      {{ syncthing_devices_current | selectattr('deviceID', 'equalto', syncthing_device.id) | first | default({}) }}
+    syncthing_device_desired:
+      deviceID: "{{ syncthing_device.id }}"
+      name: "{{ syncthing_device.name }}"
+      introducer: "{{ syncthing_device.introducer | default(false) | bool }}"
+      autoAcceptFolders: "{{ syncthing_device.auto_accept_folders | default(false) | bool }}"
+
+# missing fields (addresses, compression, …) are filled with syncthing's defaults
+- name: "Device {{ syncthing_device.name }}: add"
+  ansible.builtin.uri:
+    url: "{{ syncthing_api_url }}/rest/config/devices"
+    method: POST
+    headers: { X-API-Key: "{{ syncthing_api_key }}" }
+    body_format: json
+    body: "{{ syncthing_device_desired }}"
+    validate_certs: false
+  when:
+    - syncthing_device.state | default('present') == 'present'
+    - syncthing_device_current | length == 0
+  changed_when: true
+
+- name: "Device {{ syncthing_device.name }}: update"
+  ansible.builtin.uri:
+    url: "{{ syncthing_api_url }}/rest/config/devices/{{ syncthing_device.id }}"
+    method: PATCH
+    headers: { X-API-Key: "{{ syncthing_api_key }}" }
+    body_format: json
+    body: "{{ syncthing_device_desired }}"
+    validate_certs: false
+  when:
+    - syncthing_device.state | default('present') == 'present'
+    - syncthing_device_current | length > 0
+    - >-
+      syncthing_device_desired !=
+      (syncthing_device_current | dict2items | selectattr('key', 'in', syncthing_device_desired) | items2dict)
+  changed_when: true
+
+- name: "Device {{ syncthing_device.name }}: remove"
+  ansible.builtin.uri:
+    url: "{{ syncthing_api_url }}/rest/config/devices/{{ syncthing_device.id }}"
+    method: DELETE
+    headers: { X-API-Key: "{{ syncthing_api_key }}" }
+    validate_certs: false
+  when:
+    - syncthing_device.state | default('present') == 'absent'
+    - syncthing_device_current | length > 0
+  changed_when: true

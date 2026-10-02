@@ -1,0 +1,15 @@
+galaxy_info:
+  author: hoonetorg
+  description: Syncthing 2.x per user with fixed identity, GUI/API settings and devices/folders managed via REST API
+  license: Apache-2.0
+  min_ansible_version: "2.15"
+  platforms:
+    - name: opensuse
+      versions: [all]
+    - name: Fedora
+      versions: [all]
+    - name: Debian
+      versions: [all]
+  galaxy_tags: [syncthing, sync, backup]
+
+dependencies: []
