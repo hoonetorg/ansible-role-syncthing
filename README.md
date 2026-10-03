@@ -15,6 +15,12 @@ Order of operations:
 
 The user must exist (run after ansible-role-user).
 
+## Requirements
+
+- controller: collections `ansible.utils`, `community.general`, `ansible.posix`; Python `xmltodict`
+  (`ansible.utils.from_xml` parses syncthing's `config.xml`)
+- target: syncthing >= 2.0, systemd, `runuser` (util-linux)
+
 ## Variables
 
 ```yaml

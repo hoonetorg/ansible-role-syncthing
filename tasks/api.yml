@@ -7,15 +7,14 @@
   register: syncthing_config_raw
   no_log: true
 
-# regex_findall returns the group, no backslashes needed (they are mangled between YAML and Jinja)
+# parsed on the controller (ansible.utils.from_xml needs Python xmltodict there);
+# attributes become '@'-keys, child elements plain keys
 - name: Derive API endpoint from config.xml
   ansible.builtin.set_fact:
-    syncthing_api_key: "{{ cfg | regex_findall('<apikey>([^<]*)</apikey>') | first }}"
-    syncthing_api_url: >-
-      {{ 'https' if (cfg | regex_findall('<gui [^>]*tls=.(true|false).') | first) == 'true' else 'http' }}://{{
-         cfg | regex_findall('<gui [^>]*>[^<]*<address>([^<]*)</address>') | first }}
+    syncthing_api_key: "{{ gui.apikey }}"
+    syncthing_api_url: "{{ 'https' if gui['@tls'] == 'true' else 'http' }}://{{ gui.address }}"
   vars:
-    cfg: "{{ syncthing_config_raw.content | b64decode }}"
+    gui: "{{ (syncthing_config_raw.content | b64decode | ansible.utils.from_xml).configuration.gui }}"
   no_log: true
 
 - name: Wait for the syncthing API
