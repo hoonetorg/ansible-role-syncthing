@@ -1,0 +1,7 @@
+---
+# Python binding that package_facts imports on the target, per OS family (used if facts_package is empty);
+# Suse flavors it by Python version, so it follows the interpreter Ansible uses (Leap 16.1: python313-rpm)
+syncthing_facts_packages:
+  Suse: "python{{ ansible_facts.python.version.major }}{{ ansible_facts.python.version.minor }}-rpm"
+  RedHat: python3-rpm
+  Debian: python3-apt

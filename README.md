@@ -20,12 +20,16 @@ The user must exist (run after ansible-role-user).
 - controller: collections `ansible.utils`, `community.general`, `ansible.posix`; Python `xmltodict`
   (`ansible.utils.from_xml` parses syncthing's `config.xml`)
 - target: syncthing >= 2.0, systemd, `runuser` (util-linux)
+- the role installs the Python binding `package_facts` needs for the version check (Suse:
+  `python<version>-rpm` of the target Python, e.g. `python313-rpm`; RedHat: `python3-rpm`; Debian:
+  `python3-apt`); other names via `facts_package`
 
 ## Variables
 
 ```yaml
 syncthing:
   user: alice                                   # required
+  # facts_package: python3-rpm                  # default: derived from the OS family
   name: alice-laptop                            # own device name, default: inventory_hostname_short
   # home: /home/alice/.local/state/syncthing    # default
   cert: "{{ vault_syncthing_cert }}"            # required, PEM
@@ -37,6 +41,7 @@ syncthing:
     user: alice                                 # default: syncthing.user
     password: "{{ vault_syncthing_gui_password }}"   # required, plain text (stored as bcrypt hash)
   firewalld: true                               # default
+  no_log: true                                  # default; false shows REST requests incl. the API key (debugging)
   devices:
     - id: "AAAAAAA-BBBBBBB-CCCCCCC-DDDDDDD-EEEEEEE-FFFFFFF-GGGGGGG-HHHHHHH"
       name: phone

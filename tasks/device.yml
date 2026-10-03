@@ -23,6 +23,7 @@
     - syncthing_device.state | default('present') == 'present'
     - syncthing_device_current | length == 0
   changed_when: true
+  no_log: "{{ syncthing_final.no_log }}"
 
 - name: "Device {{ syncthing_device.name }}: update"
   ansible.builtin.uri:
@@ -39,6 +40,7 @@
       syncthing_device_desired !=
       (syncthing_device_current | dict2items | selectattr('key', 'in', syncthing_device_desired) | items2dict)
   changed_when: true
+  no_log: "{{ syncthing_final.no_log }}"
 
 - name: "Device {{ syncthing_device.name }}: remove"
   ansible.builtin.uri:
@@ -50,3 +52,4 @@
     - syncthing_device.state | default('present') == 'absent'
     - syncthing_device_current | length > 0
   changed_when: true
+  no_log: "{{ syncthing_final.no_log }}"

@@ -35,8 +35,18 @@
     name: "{{ syncthing_final.package }}"
     state: present
 
+# package_facts reads the package database through this Python library (rpm/apt) on the target
+- name: Install Python binding for package_facts
+  ansible.builtin.package:
+    name: "{{ syncthing_final.facts_package or syncthing_facts_packages[ansible_facts.os_family] }}"
+    state: present
+  register: syncthing_facts_dep
+  when: syncthing_final.facts_package | length > 0 or ansible_facts.os_family in syncthing_facts_packages
+
+# in check mode the binding may not be installed yet
 - name: Gather package facts
   ansible.builtin.package_facts:
+  when: not (ansible_check_mode and syncthing_facts_dep is changed)
 
 - name: Assert syncthing version
   ansible.builtin.assert:
@@ -46,7 +56,7 @@
       syncthing {{ ansible_facts.packages[syncthing_final.package][0].version }} is installed, but
       >= {{ syncthing_final.min_version }} is required (on openSUSE add the OBS "network" repository)
     quiet: true
-  when: not ansible_check_mode or syncthing_final.package in ansible_facts.packages
+  when: not ansible_check_mode or syncthing_final.package in ansible_facts.packages | default({})
 
 # parents of the default home must belong to the user, not to root
 - name: Create syncthing home directory
@@ -77,6 +87,7 @@
   loop_control:
     label: "{{ item.name }}"
   no_log: true
+  diff: false
   notify: syncthing restart
 
 # keeps the installed cert/key, creates config.xml with GUI user and (hashed) password

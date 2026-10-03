@@ -36,6 +36,7 @@
     - syncthing_folder.state | default('present') == 'present'
     - syncthing_folder_current | length == 0
   changed_when: true
+  no_log: "{{ syncthing_final.no_log }}"
 
 # devices_exclusive false: listed devices are only added (devices shared manually or by an introducer stay)
 # devices_exclusive true: devices not listed are removed (the own device always stays);
@@ -63,6 +64,7 @@
       missing | length > 0 or extra | length > 0 or syncthing_folder_desired !=
       (syncthing_folder_current | dict2items | selectattr('key', 'in', syncthing_folder_desired) | items2dict)
   changed_when: true
+  no_log: "{{ syncthing_final.no_log }}"
 
 - name: "Folder {{ syncthing_folder.id }}: remove"
   ansible.builtin.uri:
@@ -74,3 +76,4 @@
     - syncthing_folder.state | default('present') == 'absent'
     - syncthing_folder_current | length > 0
   changed_when: true
+  no_log: "{{ syncthing_final.no_log }}"

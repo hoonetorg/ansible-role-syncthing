@@ -3,6 +3,9 @@
 syncthing_defaults:
   package: syncthing
   min_version: "2.0"
+  # Python binding package_facts needs on the target (version check); empty: derived from the OS family
+  # (vars/main.yml), e.g. python313-rpm on Leap 16.1; set it for other names (e.g. Leap 15: python3-rpm)
+  facts_package: ""
 
   # system user running syncthing@<user>.service (required)
   user: ""
@@ -23,6 +26,10 @@ syncthing_defaults:
     tls: true
     user: ""          # empty: same as `user`
     password: ""      # plain text (required); syncthing stores the bcrypt hash
+
+  # hide REST API requests/results (they carry the API key in a header); set false only for debugging,
+  # then the API key appears on screen and in logs
+  no_log: true
 
   # open the firewalld service "syncthing" (22000/tcp+udp, 21027/udp) when firewalld is running
   firewalld: true
