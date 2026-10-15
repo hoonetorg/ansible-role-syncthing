@@ -31,9 +31,6 @@ syncthing_defaults:
   # then the API key appears on screen and in logs
   no_log: true
 
-  # open the firewalld service "syncthing" (22000/tcp+udp, 21027/udp) when firewalld is running
-  firewalld: true
-
   # managed devices/folders, see README.md; objects not listed here are left untouched
   devices: []
   folders: []

@@ -138,17 +138,3 @@
 - name: Configure syncthing via REST API
   ansible.builtin.include_tasks: api.yml
   when: not ansible_check_mode
-
-- name: Gather service facts
-  ansible.builtin.service_facts:
-  when: syncthing_final.firewalld
-
-- name: Open firewalld service syncthing
-  ansible.posix.firewalld:
-    service: syncthing
-    permanent: true
-    immediate: true
-    state: enabled
-  when:
-    - syncthing_final.firewalld
-    - ansible_facts.services['firewalld.service'].state | default('') == 'running'

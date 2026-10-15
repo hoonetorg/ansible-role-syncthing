@@ -11,13 +11,15 @@ Order of operations:
 3. `syncthing generate --gui-user … --gui-password=-` creates `config.xml` (only if missing)
 4. systemd drop-in (`STHOMEDIR`), enable + start `syncthing@<user>.service`
 5. REST API: GUI (address, TLS, user, API key, password), devices, folders
-6. firewalld service `syncthing` (if firewalld is running)
+
+The firewall is not touched: open firewalld service `syncthing` (22000/tcp+udp, 21027/udp) in the zone of your
+networks with ansible-role-network (zone services).
 
 The user must exist (run after ansible-role-user).
 
 ## Requirements
 
-- controller: collections `ansible.utils`, `community.general`, `ansible.posix`; Python `xmltodict`
+- controller: collections `ansible.utils`, `community.general`; Python `xmltodict`
   (`ansible.utils.from_xml` parses syncthing's `config.xml`)
 - target: syncthing >= 2.0, systemd, `runuser` (util-linux)
 - the role installs the Python binding `package_facts` needs for the version check (Suse:
@@ -40,7 +42,6 @@ syncthing:
     tls: true                                   # default
     user: alice                                 # default: syncthing.user
     password: "{{ vault_syncthing_gui_password }}"   # required, plain text (stored as bcrypt hash)
-  firewalld: true                               # default
   no_log: true                                  # default; false shows REST requests incl. the API key (debugging)
   devices:
     - id: "AAAAAAA-BBBBBBB-CCCCCCC-DDDDDDD-EEEEEEE-FFFFFFF-GGGGGGG-HHHHHHH"
