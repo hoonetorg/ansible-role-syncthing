@@ -23,11 +23,11 @@
 
 - name: Set syncthing paths
   ansible.builtin.set_fact:
-    syncthing_user_home: "{{ getent_passwd[syncthing_final.user][4] }}"
-    syncthing_user_gid: "{{ getent_passwd[syncthing_final.user][2] }}"
+    syncthing_user_home: "{{ ansible_facts.getent_passwd[syncthing_final.user][4] }}"
+    syncthing_user_gid: "{{ ansible_facts.getent_passwd[syncthing_final.user][2] }}"
     syncthing_home: >-
       {{ syncthing_final.home if syncthing_final.home | length > 0
-         else getent_passwd[syncthing_final.user][4] ~ '/.local/state/syncthing' }}
+         else ansible_facts.getent_passwd[syncthing_final.user][4] ~ '/.local/state/syncthing' }}
     syncthing_service: "syncthing@{{ syncthing_final.user }}.service"
 
 - name: Install syncthing
