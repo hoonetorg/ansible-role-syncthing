@@ -9,6 +9,7 @@
       name: "{{ syncthing_device.name }}"
       introducer: "{{ syncthing_device.introducer | default(false) | bool }}"
       autoAcceptFolders: "{{ syncthing_device.auto_accept_folders | default(false) | bool }}"
+  no_log: "{{ syncthing_final.no_log }}"
 
 # missing fields (addresses, compression, …) are filled with syncthing's defaults
 - name: "Device {{ syncthing_device.name }}: add"

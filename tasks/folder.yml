@@ -20,6 +20,7 @@
       type: "{{ syncthing_folder.type | default('sendreceive') }}"
     syncthing_folder_device_ids: >-
       {{ syncthing_folder.devices | default([]) | map('extract', syncthing_device_ids) | list }}
+  no_log: "{{ syncthing_final.no_log }}"
 
 # the local device is added by syncthing itself; missing fields get syncthing's defaults
 - name: "Folder {{ syncthing_folder.id }}: add"

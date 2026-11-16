@@ -117,6 +117,7 @@
     syncthing_devices_current: "{{ syncthing_current.results[0].json }}"
     syncthing_folders_current: "{{ syncthing_current.results[1].json }}"
     syncthing_device_ids: "{{ syncthing_final.devices | items2dict(key_name='name', value_name='id') }}"
+  no_log: "{{ syncthing_final.no_log }}"
 
 - name: Get own device ID
   ansible.builtin.uri:
